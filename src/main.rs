@@ -1,7 +1,8 @@
+mod image_processor;
 use iced::{
     event::{self, Status},
     font::{Family, Weight},
-    widget::{container, image as iced_image, text},
+    widget::{button, column, container, image},
     window::{self, Position},
     Element, Event, Font, Length, Size, Subscription, Task, Theme,
 };
@@ -10,6 +11,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 enum Message {
     InputPath(PathBuf),
+    Submit,
 }
 
 #[derive(Debug, Clone)]
@@ -28,13 +30,28 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::InputPath(path) => {
             state.input_path = Some(path);
         }
+        Message::Submit => {
+            let Some(input_path) = state.input_path.as_ref() else {
+                return Task::none();
+            };
+
+            let Ok(img) = image_processor::process_image(
+                10.0, 10.0, 0.5, 300.0, 5, 5, 210.0, 297.0, false, input_path,
+            ) else {
+                return Task::none();
+            };
+            let output_path = input_path.parent().unwrap().join("output.png");
+            img.save(output_path).unwrap();
+            state.input_path = None;
+            return Task::none();
+        }
     }
     Task::none()
 }
 
 fn view(state: &State) -> Element<Message> {
     let area = if let Some(input_path) = state.input_path.as_ref() {
-        container(iced_image(input_path))
+        container(image(input_path))
             .width(Length::Fill)
             .height(Length::Fill)
     } else {
@@ -43,8 +60,8 @@ fn view(state: &State) -> Element<Message> {
             .width(Length::Fill)
             .height(Length::Fill)
     };
-
-    area.into()
+    let submit_button = button("プリを作成").on_press(Message::Submit);
+    column![area, submit_button].into()
 }
 
 fn mouse_event_handling(_: &State) -> Subscription<Message> {
