@@ -2,7 +2,7 @@ use iced::{
     font::{Family, Weight},
     widget::text,
     window::{self, Position},
-    Element, Font, Size, Task,
+    Element, Font, Size, Task, Theme,
 };
 
 #[derive(Debug, Clone)]
@@ -25,6 +25,10 @@ fn view(state: &State) -> Element<Message> {
     text("Hello, world!").into()
 }
 
+fn set_theme(_: &State) -> Theme {
+    Theme::Light
+}
+
 fn main() -> iced::Result {
     let window_settings = window::Settings {
         size: Size::new(400.0, 500.0),
@@ -42,5 +46,6 @@ fn main() -> iced::Result {
     iced::application("プリプリメーカー", update, view)
         .default_font(default_font)
         .window(window_settings)
+        .theme(set_theme)
         .run()
 }
