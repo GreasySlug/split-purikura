@@ -1,5 +1,4 @@
 mod image_processor;
-
 use iced::{
     event::{self, Status},
     font::{Family, Weight},
@@ -21,26 +20,45 @@ enum Message {
     Row(u32),
     AspectRatio(bool),
     PaperSize(image_processor::PaperSize),
+    Paperrotate(bool),
+    ConfigTheme(Theme),
     Submit,
 }
 
 #[derive(Debug, Clone)]
 struct State {
     input_path: Option<PathBuf>,
+    output_path: Option<PathBuf>,
     image_config: image_processor::ImageConfig,
     paper_size: combo_box::State<image_processor::PaperSize>,
     selected_paper_size: image_processor::PaperSize,
     is_config: bool,
+    themes: combo_box::State<Theme>,
+    selecte_theme: Theme,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             input_path: None,
+            output_path: None,
             image_config: image_processor::ImageConfig::default(),
             paper_size: combo_box::State::new(image_processor::PaperSize::vec_new()),
             selected_paper_size: image_processor::PaperSize::A4,
             is_config: false,
+            themes: combo_box::State::new(vec![
+                Theme::KanagawaDragon,
+                Theme::KanagawaLotus,
+                Theme::KanagawaWave,
+                Theme::Dark,
+                Theme::Light,
+                Theme::CatppuccinFrappe,
+                Theme::CatppuccinLatte,
+                Theme::CatppuccinMocha,
+                Theme::GruvboxDark,
+                Theme::GruvboxLight,
+            ]),
+            selecte_theme: Theme::CatppuccinFrappe,
         }
     }
 }
@@ -59,15 +77,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             };
             let image_config = &state.image_config;
             let selected_paper_size = &state.selected_paper_size;
-            let Ok(img) =
+            if let Some(path) =
                 image_processor::process_image(image_config, selected_paper_size, input_path)
-            else {
-                return Task::none();
-            };
-            let output_path = input_path.parent().unwrap().join("output.png");
-            img.save(output_path).unwrap();
-            state.input_path = None;
-            return Task::none();
+            {
+                state.output_path = Some(path);
+            }
         }
         Message::Width(width) => {
             state.image_config.width_mm = width;
@@ -93,6 +107,12 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::PaperSize(paper_size) => {
             state.selected_paper_size = paper_size;
         }
+        Message::Paperrotate(is_rotate) => {
+            state.image_config.is_rotate = is_rotate;
+        }
+        Message::ConfigTheme(theme) => {
+            state.selecte_theme = theme;
+        }
     }
     Task::none()
 }
@@ -100,10 +120,15 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 fn view(state: &State) -> Element<Message> {
     let area = if let Some(input_path) = state.input_path.as_ref() {
         container(image(input_path))
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .style(container::rounded_box)
             .width(Length::Fill)
             .height(Length::Fill)
     } else {
         container("画像をドラック & ドロップしてください")
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
             .style(container::rounded_box)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -112,9 +137,15 @@ fn view(state: &State) -> Element<Message> {
     let is_config = toggler(state.is_config)
         .label("設定を変更")
         .on_toggle(Message::Config);
-    let column = column![row![submit_button, is_config], area]
-        .align_x(Alignment::Center)
-        .spacing(10);
+    let column = column![
+        row![submit_button, is_config]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        area
+    ]
+    .align_x(Alignment::Center)
+    .padding(10)
+    .spacing(10);
     let column = if state.is_config {
         column.push(config_view(state))
     } else {
@@ -124,19 +155,20 @@ fn view(state: &State) -> Element<Message> {
 }
 
 macro_rules! slider_view {
-    ($label:expr, $min_value:expr, $max_value:expr, $value:expr, $message:expr) => {{
-        let label = text($label).width(Length::Fill);
-        let slider = slider($min_value..=$max_value, $value, $message);
-        let value = text($value.to_string()).width(Length::Fill);
-        row![label, slider, value].spacing(10)
+    ($label:expr, $min_value:expr, $max_value:expr, $step:expr, $value:expr, $message:expr) => {{
+        let l = text($label).width(Length::Fill);
+        let s = slider($min_value..=$max_value, $value, $message).step($step);
+        let v = text($value.to_string()).width(Length::Fill);
+        row![l, s, v].spacing(10)
     }};
 }
 
 fn config_view(state: &State) -> Element<Message> {
     let dpi = slider_view!(
-        "解像度(DPI)",
+        "DPI",
         0.0,
         1500.0,
+        10.0,
         state.image_config.dpi,
         Message::Dpi
     );
@@ -144,6 +176,7 @@ fn config_view(state: &State) -> Element<Message> {
         "幅(mm)",
         0.0,
         100.0,
+        1.0,
         state.image_config.width_mm,
         Message::Width
     );
@@ -151,6 +184,7 @@ fn config_view(state: &State) -> Element<Message> {
         "高さ(mm)",
         0.0,
         100.0,
+        1.0,
         state.image_config.height_mm,
         Message::Height
     );
@@ -158,21 +192,43 @@ fn config_view(state: &State) -> Element<Message> {
         "余白(mm)",
         0.0,
         10.0,
+        0.1,
         state.image_config.diff_mm,
         Message::Diff
     );
-    let rows = slider_view!("行数", 0, 50, state.image_config.rows, Message::Row);
-    let cols = slider_view!("列数", 0, 50, state.image_config.cols, Message::Col);
+    let rows = slider_view!("行数", 1, 20, 1u32, state.image_config.rows, Message::Row);
+    let cols = slider_view!("列数", 1, 20, 1u32, state.image_config.cols, Message::Col);
+    let paper_size_desc = text("紙のサイズを指定してください");
     let paper_size = combo_box(
         &state.paper_size,
-        "紙のサイズを指定してください",
+        "",
         Some(&state.selected_paper_size),
         Message::PaperSize,
     )
     .width(Length::Fill);
-    let aspect_ratio = toggler(state.image_config.is_aspect_ratio)
-        .label("アスペクト比を固定")
-        .on_toggle(Message::AspectRatio);
+    let paper_config = row![paper_size_desc, paper_size]
+        .align_y(Alignment::Center)
+        .spacing(10);
+    let rotate_desc = text("紙を回転");
+    let rotate = toggler(state.image_config.is_rotate).on_toggle(Message::Paperrotate);
+    let rotate_config = row![rotate_desc, rotate]
+        .align_y(Alignment::Center)
+        .spacing(10);
+    let aspect_desc = text("アスペクト比を固定");
+    let aspect_ratio = toggler(state.image_config.is_aspect_ratio).on_toggle(Message::AspectRatio);
+    let aspect_config = row![aspect_desc, aspect_ratio]
+        .align_y(Alignment::Center)
+        .spacing(10);
+    let theme_desc = text("テーマを変更");
+    let theme = combo_box(
+        &state.themes,
+        "",
+        Some(&state.selecte_theme),
+        Message::ConfigTheme,
+    );
+    let theme_config = row![theme_desc, theme]
+        .align_y(Alignment::Center)
+        .spacing(10);
     column![
         dpi,
         width_mm,
@@ -180,9 +236,10 @@ fn config_view(state: &State) -> Element<Message> {
         diff_mm,
         rows,
         cols,
-        row![aspect_ratio, paper_size]
-            .align_y(Alignment::Center)
-            .spacing(10)
+        paper_config,
+        rotate_config,
+        aspect_config,
+        theme_config
     ]
     .spacing(10)
     .padding(10)
@@ -201,14 +258,14 @@ fn mouse_event_handling(_: &State) -> Subscription<Message> {
     })
 }
 
-fn set_theme(_: &State) -> Theme {
-    Theme::CatppuccinFrappe
+fn set_theme(state: &State) -> Theme {
+    state.selecte_theme.clone()
 }
 
 fn main() -> iced::Result {
     let window_settings = window::Settings {
         size: Size::new(400.0, 500.0),
-        max_size: Some(Size::new(500.0, 600.0)),
+        max_size: Some(Size::new(500.0, 800.0)),
         min_size: Some(Size::new(100.0, 100.0)),
         position: Position::Centered,
         ..Default::default()
